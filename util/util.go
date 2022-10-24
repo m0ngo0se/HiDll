@@ -5,6 +5,7 @@ import (
 	"github.com/google/shlex"
 	"io"
 	"os"
+	"strings"
 )
 
 func ParseCmd(s string) []string {
@@ -15,8 +16,8 @@ func ParseCmd(s string) []string {
 	return args
 }
 
-// 判断文件夹是否存在
-func HasDir(path string) (bool, error) {
+// 判断文件是否存在
+func PathExist(path string) (bool, error) {
 	_, err := os.Stat(path)
 	if err == nil {
 		return true, nil
@@ -28,18 +29,20 @@ func HasDir(path string) (bool, error) {
 }
 
 // 创建文件夹
-func CreateDir(path string) {
-	exist, err := HasDir(path)
+func CreateDir(path string) bool {
+	exist, err := PathExist(path)
 	if err != nil {
 		panic(err)
 	}
 	if exist {
 		fmt.Println("project has existed")
+		return false
 	} else {
 		err = os.Mkdir(path, os.ModePerm)
 		if err != nil {
 			panic(err)
 		}
+		return true
 	}
 }
 
@@ -58,7 +61,11 @@ func CopyFile(src, dst string) error {
 		return err
 	}
 	defer source.Close()
-
+	ok, _ := PathExist(dst)
+	for ok {
+		dst = fmt.Sprintf("%s_%s", dst, "cp")
+		ok, _ = PathExist(dst)
+	}
 	destination, err := os.Create(dst)
 	if err != nil {
 		return err
@@ -66,4 +73,23 @@ func CopyFile(src, dst string) error {
 	defer destination.Close()
 	_, err = io.Copy(destination, source)
 	return err
+}
+
+func CopyExes(srcpath, dstpath string) {
+	files, err := os.ReadDir(srcpath)
+	if err != nil {
+		panic(err)
+	}
+	for _, file := range files {
+		if file.IsDir() {
+			newsrcpath := fmt.Sprintf("%s\\%s", srcpath, file.Name())
+			CopyExes(newsrcpath, dstpath)
+		} else {
+			if strings.HasSuffix(file.Name(), ".exe") {
+				newsrcpath := fmt.Sprintf("%s\\%s", srcpath, file.Name())
+				newdstpath := fmt.Sprintf("%s\\%s", dstpath, file.Name())
+				CopyFile(newsrcpath, newdstpath)
+			}
+		}
+	}
 }
