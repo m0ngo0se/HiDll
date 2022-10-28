@@ -17,28 +17,25 @@ func ParseCmd(s string) []string {
 }
 
 // 判断文件是否存在
-func PathExist(path string) (bool, error) {
+func PathExist(path string) bool {
 	_, err := os.Stat(path)
 	if err == nil {
-		return true, nil
+		return true
 	}
 	if os.IsNotExist(err) {
-		return false, nil
+		return false
 	}
-	return false, err
+	return false
 }
 
 // 创建文件夹
 func CreateDir(path string) bool {
-	exist, err := PathExist(path)
-	if err != nil {
-		panic(err)
-	}
+	exist := PathExist(path)
 	if exist {
 		fmt.Println("project has existed")
 		return false
 	} else {
-		err = os.Mkdir(path, os.ModePerm)
+		err := os.Mkdir(path, os.ModePerm)
 		if err != nil {
 			panic(err)
 		}
@@ -61,10 +58,10 @@ func CopyFile(src, dst string) error {
 		return err
 	}
 	defer source.Close()
-	ok, _ := PathExist(dst)
+	ok := PathExist(dst)
 	for ok {
 		dst = fmt.Sprintf("%s_%s", dst, "cp")
-		ok, _ = PathExist(dst)
+		ok = PathExist(dst)
 	}
 	destination, err := os.Create(dst)
 	if err != nil {
@@ -92,4 +89,14 @@ func CopyExes(srcpath, dstpath string) {
 			}
 		}
 	}
+}
+
+func SliceDelete[T any](origin []T, idx int) []T {
+	target := origin[:0]
+	for id, item := range origin {
+		if id != idx {
+			target = append(target, item)
+		}
+	}
+	return target
 }

@@ -18,7 +18,6 @@ type prenfo struct {
 var (
 	project    string
 	prexes     []prenfo
-	knowndlls  = []string{"kernel32.exe"}
 	blackprexs = []string{"api-ms-win", "vcruntime"}
 )
 
@@ -46,33 +45,42 @@ func PreExecutor(s string) {
 func preCompleter2(d prompt.Document) []prompt.Suggest {
 	s := []prompt.Suggest{
 		{Text: "noprex", Description: "noprex"},
-		{Text: "nostuff", Description: "nostuff"},
+		{Text: "exit", Description: "exit"},
 	}
 	return prompt.FilterHasPrefix(s, d.GetWordBeforeCursor(), true)
 }
 
 func preExecutor2(s string) {
-
+	if s == "exit" {
+		os.Exit(0)
+	} else {
+		args := util.ParseCmd(s)
+		if args[0] == "noprex" && len(args) == 2 {
+			NoPrex(args[1])
+		} else {
+			fmt.Println("input error!")
+		}
+	}
 }
 
 func NoPrex(prex string) {
+	tmpprexes := prexes
 	for idx, info := range prexes {
 		imptable := info.importab
 		for name, _ := range imptable {
 			if strings.HasPrefix(strings.ToLower(name), prex) {
-				delete(imptable, name)
+				err := os.Remove(info.path)
+				if err != nil {
+					println(err)
+				}
+				tmpprexes = util.SliceDelete(tmpprexes, idx)
+				break
 			}
 		}
-
 	}
+	prexes = tmpprexes
+	show()
 }
-
-//
-//func NoStuff() {
-//	for idx, info := range prexes {
-//
-//	}
-//}
 
 func initList(path string) {
 	files, err := os.ReadDir(path)
@@ -105,17 +113,31 @@ func initList(path string) {
 		}
 		for _, value := range pe.IAT {
 			dllname, _, _ := strings.Cut(value.Meaning, "!")
-			if _, ok := exe.importab[dllname]; !ok {
-				exe.importab[dllname] = 1
+			if !IsKnown(dllname) {
+				if _, ok := exe.importab[dllname]; !ok {
+					exe.importab[dllname] = 1
+				}
 			}
 		}
-		prexes = append(prexes, exe)
 		pe.Close()
+		if len(exe.importab) == 0 {
+			os.Remove(filepath)
+		} else {
+			prexes = append(prexes, exe)
+		}
+	}
+	for _, prex := range blackprexs {
+		NoPrex(prex)
 	}
 }
 
-func filterKnown() {
-
+func IsKnown(name string) bool {
+	path := fmt.Sprintf("C:\\Windows\\System32\\%s", name)
+	path2 := fmt.Sprintf("C:\\Windows\\SysWOW64\\%s", name)
+	if util.PathExist(path) || util.PathExist(path2) {
+		return true
+	}
+	return false
 }
 
 func show() {
@@ -134,7 +156,6 @@ func createProject(name, path string) {
 		util.CopyExes(path, project)
 	}
 	initList(project)
-	show()
 	project := fmt.Sprintf("%s%s>", "[HiDll]>preload>", name)
 	p := prompt.New(
 		preExecutor2,
