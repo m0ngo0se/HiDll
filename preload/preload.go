@@ -66,8 +66,8 @@ func getPreFuncs(exename, dllname string) {
 				os.Exit(0)
 			}
 			for _, value := range pe.IAT {
-				dllname, funcname, _ := strings.Cut(value.Meaning, "!")
-				if dllname != "" {
+				dll, funcname, _ := strings.Cut(value.Meaning, "!")
+				if dll == dllname {
 					functext := fmt.Sprintf("extern \"C\" __declspec(dllexport) void %s()\n{\n\treturn;\n}\n", funcname)
 					util.Writedata(output, functext)
 				}
@@ -124,7 +124,7 @@ func initList(path string) {
 			os.Remove(filepath)
 			continue
 		}
-		if pe.Is32 || !pe.HasIAT || !pe.IsSigned {
+		if pe.Is32 || !pe.HasIAT || !pe.IsSigned || pe.HasCLR {
 			pe.Close()
 			os.Remove(filepath)
 			continue
@@ -167,8 +167,22 @@ func FilterKnown() {
 			delete(info.importab, dllname)
 		}
 		if len(info.importab) == 0 {
+			os.Remove(info.path)
 			delete(prexes, name)
 		}
+	}
+}
+
+func CheckNum() {
+	delexes := make([]string, 0)
+	for name, info := range prexes {
+		if len(info.importab) >= 2 {
+			os.Remove(info.path)
+			delexes = append(delexes, name)
+		}
+	}
+	for _, exename := range delexes {
+		delete(prexes, exename)
 	}
 }
 
@@ -177,6 +191,7 @@ func show() {
 		fmt.Println("all exes has deleted!")
 		os.Exit(0)
 	}
+	fmt.Printf("Exe num:%d\n", len(prexes))
 	for _, value := range prexes {
 		fmt.Println(value)
 	}
@@ -193,6 +208,7 @@ func createProject(name, path string) {
 	}
 	initList(project)
 	FilterKnown()
+	CheckNum()
 	show()
 	project := fmt.Sprintf("%s%s>", "[HiDll]>preload>", name)
 	p := prompt.New(
