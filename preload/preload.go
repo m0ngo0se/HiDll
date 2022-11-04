@@ -9,15 +9,14 @@ import (
 	"strings"
 )
 
-type prenfo struct {
-	name     string
+type preinfo struct {
 	path     string
 	importab map[string]int
 }
 
 var (
 	project    string
-	prexes     []prenfo
+	prexes     map[string]preinfo
 	blackprexs = []string{"api-ms-win", "vcruntime"}
 )
 
@@ -44,10 +43,37 @@ func PreExecutor(s string) {
 
 func preCompleter2(d prompt.Document) []prompt.Suggest {
 	s := []prompt.Suggest{
-		{Text: "noprex", Description: "noprex"},
+		{Text: "get", Description: "get iat funcs"},
 		{Text: "exit", Description: "exit"},
 	}
 	return prompt.FilterHasPrefix(s, d.GetWordBeforeCursor(), true)
+}
+
+func getPreFuncs(exename, dllname string) {
+	output := fmt.Sprintf("%s.txt", dllname)
+	if exeinfo, ok := prexes[exename]; ok {
+		if _, ok := exeinfo.importab[dllname]; ok {
+			pe, err := peparser.New(exeinfo.path, &peparser.Options{})
+			if err != nil {
+				pe.Close()
+				println("get funcs error")
+				os.Exit(0)
+			}
+			err = pe.Parse()
+			if err != nil {
+				pe.Close()
+				println("get funcs error")
+				os.Exit(0)
+			}
+			for _, value := range pe.IAT {
+				dllname, funcname, _ := strings.Cut(value.Meaning, "!")
+				if dllname != "" {
+					functext := fmt.Sprintf("extern \"C\" __declspec(dllexport) void %s()\n{\n\treturn;\n}\n", funcname)
+					util.Writedata(output, functext)
+				}
+			}
+		}
+	}
 }
 
 func preExecutor2(s string) {
@@ -55,8 +81,8 @@ func preExecutor2(s string) {
 		os.Exit(0)
 	} else {
 		args := util.ParseCmd(s)
-		if args[0] == "noprex" && len(args) == 2 {
-			NoPrex(args[1])
+		if args[0] == "get" && len(args) == 3 {
+			getPreFuncs(args[1], args[2])
 		} else {
 			fmt.Println("input error!")
 		}
@@ -64,22 +90,19 @@ func preExecutor2(s string) {
 }
 
 func NoPrex(prex string) {
-	tmpprexes := prexes
-	for idx, info := range prexes {
+	for name, info := range prexes {
 		imptable := info.importab
-		for name, _ := range imptable {
-			if strings.HasPrefix(strings.ToLower(name), prex) {
+		for dllname, _ := range imptable {
+			if strings.HasPrefix(strings.ToLower(dllname), prex) {
 				err := os.Remove(info.path)
 				if err != nil {
 					println(err)
 				}
-				tmpprexes = util.SliceDelete(tmpprexes, idx)
+				delete(prexes, name)
 				break
 			}
 		}
 	}
-	prexes = tmpprexes
-	show()
 }
 
 func initList(path string) {
@@ -101,29 +124,28 @@ func initList(path string) {
 			os.Remove(filepath)
 			continue
 		}
-		if pe.Is32 || !pe.HasIAT {
+		if pe.Is32 || !pe.HasIAT || !pe.IsSigned {
 			pe.Close()
 			os.Remove(filepath)
 			continue
 		}
-		exe := prenfo{
-			name:     file.Name(),
+		exeinfo := preinfo{
 			path:     filepath,
 			importab: make(map[string]int),
 		}
 		for _, value := range pe.IAT {
 			dllname, _, _ := strings.Cut(value.Meaning, "!")
-			if !IsKnown(dllname) {
-				if _, ok := exe.importab[dllname]; !ok {
-					exe.importab[dllname] = 1
+			if dllname != "" {
+				if _, ok := exeinfo.importab[dllname]; !ok {
+					exeinfo.importab[dllname] = 1
 				}
 			}
 		}
 		pe.Close()
-		if len(exe.importab) == 0 {
+		if len(exeinfo.importab) == 0 {
 			os.Remove(filepath)
 		} else {
-			prexes = append(prexes, exe)
+			prexes[file.Name()] = exeinfo
 		}
 	}
 	for _, prex := range blackprexs {
@@ -131,13 +153,23 @@ func initList(path string) {
 	}
 }
 
-func IsKnown(name string) bool {
-	path := fmt.Sprintf("C:\\Windows\\System32\\%s", name)
-	path2 := fmt.Sprintf("C:\\Windows\\SysWOW64\\%s", name)
-	if util.PathExist(path) || util.PathExist(path2) {
-		return true
+func FilterKnown() {
+	for name, info := range prexes {
+		deldlls := make([]string, 0)
+		for dllname, _ := range info.importab {
+			path := fmt.Sprintf("C:\\Windows\\System32\\%s", dllname)
+			path2 := fmt.Sprintf("C:\\Windows\\SysWOW64\\%s", dllname)
+			if util.PathExist(path) || util.PathExist(path2) {
+				deldlls = append(deldlls, dllname)
+			}
+		}
+		for _, dllname := range deldlls {
+			delete(info.importab, dllname)
+		}
+		if len(info.importab) == 0 {
+			delete(prexes, name)
+		}
 	}
-	return false
 }
 
 func show() {
@@ -150,12 +182,18 @@ func show() {
 	}
 }
 
+func init() {
+	prexes = make(map[string]preinfo, 0)
+}
+
 func createProject(name, path string) {
 	project = ".\\" + name
 	if util.CreateDir(project) {
 		util.CopyExes(path, project)
 	}
 	initList(project)
+	FilterKnown()
+	show()
 	project := fmt.Sprintf("%s%s>", "[HiDll]>preload>", name)
 	p := prompt.New(
 		preExecutor2,

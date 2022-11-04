@@ -19,7 +19,7 @@ func MainExecutor(s string) {
 		p := prompt.New(
 			preload.PreExecutor,
 			preload.PreCompleter,
-			prompt.OptionPrefix("[HiDll] > preload > "),
+			prompt.OptionPrefix("[HiDll]>preload>"),
 		)
 		p.Run()
 	} else if s == "postload" {

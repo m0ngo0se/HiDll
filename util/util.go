@@ -11,7 +11,7 @@ import (
 func ParseCmd(s string) []string {
 	args, err := shlex.Split(s)
 	if err != nil {
-		panic(err)
+		println(err)
 	}
 	return args
 }
@@ -91,12 +91,8 @@ func CopyExes(srcpath, dstpath string) {
 	}
 }
 
-func SliceDelete[T any](origin []T, idx int) []T {
-	target := origin[:0]
-	for id, item := range origin {
-		if id != idx {
-			target = append(target, item)
-		}
-	}
-	return target
+func Writedata(path string, date string) {
+	fd, _ := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, os.ModePerm)
+	fd.Write(append([]byte(date), '\n'))
+	fd.Close()
 }
