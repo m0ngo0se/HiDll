@@ -2,14 +2,13 @@ package util
 
 import (
 	"fmt"
-	"github.com/google/shlex"
 	"io"
 	"os"
 	"strings"
 )
 
 func ParseCmd(s string) []string {
-	args, err := shlex.Split(s)
+	args, err := Split(s)
 	if err != nil {
 		println(err)
 	}
