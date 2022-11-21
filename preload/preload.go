@@ -6,6 +6,7 @@ import (
 	"github.com/c-bata/go-prompt"
 	peparser "github.com/saferwall/pe"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -17,7 +18,8 @@ type preinfo struct {
 var (
 	project    string
 	prexes     map[string]preinfo
-	blackprexs = []string{"api-ms-win", "vcruntime"}
+	outmap     map[int]string
+	blackprexs = []string{"api-ms-win", "vcruntime", "msys-", "cygwin"}
 )
 
 func PreCompleter(d prompt.Document) []prompt.Suggest {
@@ -43,34 +45,41 @@ func PreExecutor(s string) {
 
 func preCompleter2(d prompt.Document) []prompt.Suggest {
 	s := []prompt.Suggest{
-		{Text: "get", Description: "get iat funcs"},
+		{Text: "get", Description: "out iat funcs: get [id]"},
 		{Text: "exit", Description: "exit"},
 	}
 	return prompt.FilterHasPrefix(s, d.GetWordBeforeCursor(), true)
 }
 
-func getPreFuncs(exename, dllname string) {
-	output := fmt.Sprintf("%s.txt", dllname)
-	if exeinfo, ok := prexes[exename]; ok {
-		if _, ok := exeinfo.importab[dllname]; ok {
-			pe, err := peparser.New(exeinfo.path, &peparser.Options{})
-			if err != nil {
-				pe.Close()
-				println("get funcs error")
-				os.Exit(0)
-			}
-			err = pe.Parse()
-			if err != nil {
-				pe.Close()
-				println("get funcs error")
-				os.Exit(0)
-			}
-			for _, value := range pe.IAT {
-				dll, funcname, _ := strings.Cut(value.Meaning, "!")
-				if dll == dllname {
-					functext := fmt.Sprintf("extern \"C\" __declspec(dllexport) void %s()\n{\n\treturn;\n}\n", funcname)
-					util.Writedata(output, functext)
+func getPreFuncs(idx string) {
+	id, err := strconv.Atoi(idx)
+	if err != nil {
+		panic(err)
+	}
+	if name, ok := outmap[id]; ok {
+		if exeinfo, ok := prexes[name]; ok {
+			for dllname, _ := range exeinfo.importab {
+				output := fmt.Sprintf("%s.txt", dllname)
+				pe, err := peparser.New(exeinfo.path, &peparser.Options{})
+				if err != nil {
+					pe.Close()
+					println("get funcs error")
+					os.Exit(0)
 				}
+				err = pe.Parse()
+				if err != nil {
+					pe.Close()
+					println("get funcs error")
+					os.Exit(0)
+				}
+				for _, value := range pe.IAT {
+					dll, funcname, _ := strings.Cut(value.Meaning, "!")
+					if dll == dllname {
+						functext := fmt.Sprintf("extern \"C\" __declspec(dllexport) void %s()\n{\n\treturn;\n}\n", funcname)
+						util.Writedata(output, functext)
+					}
+				}
+				pe.Close()
 			}
 		}
 	}
@@ -81,8 +90,8 @@ func preExecutor2(s string) {
 		os.Exit(0)
 	} else {
 		args := util.ParseCmd(s)
-		if args[0] == "get" && len(args) == 3 {
-			getPreFuncs(args[1], args[2])
+		if args[0] == "get" && len(args) == 2 {
+			getPreFuncs(args[1])
 		} else {
 			fmt.Println("input error!")
 		}
@@ -192,13 +201,17 @@ func show() {
 		os.Exit(0)
 	}
 	fmt.Printf("Exe num:%d\n", len(prexes))
-	for _, value := range prexes {
-		fmt.Println(value)
+	idx := 1
+	for key, value := range prexes {
+		fmt.Println(idx, key, ":", value.importab)
+		outmap[idx] = key
+		idx++
 	}
 }
 
 func init() {
 	prexes = make(map[string]preinfo, 0)
+	outmap = make(map[int]string, 0)
 }
 
 func createProject(name, path string) {
